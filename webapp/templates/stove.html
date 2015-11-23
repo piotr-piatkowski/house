@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Temperatura na piecu{% endblock %}
+{% block head %}
+{{ super() }}
+<script src="https://code.highcharts.com/highcharts.js"></script>
+<script>
+$(function () {
+    $('#container').highcharts({
+        chart: {
+            type: 'line'
+        },
+        title: {
+            text: 'Temperatura na piecu CO'
+        },
+        subtitle: {
+            text: 'Ostatnie 24h'
+        },
+        xAxis: {
+            type: 'datetime'
+        },
+        yAxis: {
+            title: {
+                text: 'Temperatura (°C)'
+            }
+        },
+        plotOptions: {
+            line: {
+                dataLabels: {
+                    enabled: false
+                },
+                enableMouseTracking: false
+            }
+        },
+        series: [{
+            name: 'Górny',
+            data: {{points.upper|tojson}}
+        }, {
+            name: 'Dolny',
+            data: {{points.lower|tojson}}
+        }]
+    });
+});
+</script>
+{% endblock %}
+
+{% block body %}
+<div id="container" style="min-width: 310px; height: 400px; margin: 0 auto">
+</div>
+{% endblock %}

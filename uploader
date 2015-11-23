@@ -1,0 +1,53 @@
+#!/usr/bin/env python
+
+import re
+import time
+from influxdb import InfluxDBClient
+
+W1DIR = '/sys/bus/w1/devices'
+W1DEVICES = {
+    'stove': {
+        '28-0115622c96ff': 'upper',
+        '28-021581d6d3ff': 'lower',
+    },
+}
+INTERVAL=5
+
+def read_temp(dev):
+    path = "{}/{}/w1_slave".format(W1DIR, dev)
+    with open(path) as f:
+        crc = f.readline()
+        temp = f.readline()
+    if re.search(r'crc=.. YES', crc):
+        m = re.search(r't=(\d+)', temp)
+        if m:
+            return float(m.group(1)) / 1000
+    return None
+
+
+conn = InfluxDBClient('172.22.22.1', 8086, 'idbup', 'idbup', 'house')
+
+next_time = time.time()
+next_time = int(next_time / INTERVAL) * INTERVAL
+
+while True:
+    while time.time() < next_time:
+        time.sleep(0.1)
+    points = []
+    for place, termometers in W1DEVICES.iteritems():
+        fields = {}
+        for dev, name in termometers.iteritems():
+            t = read_temp(dev)
+            if t is not None:
+                fields[name] = t
+        if fields:
+            points.append({
+                'measurement': 'temperature',
+                'tags': { 'place': place },
+                'fields': fields
+            })
+    if points:
+        conn.write_points(points)
+        print "Written: {}".format(points)
+
+    next_time += INTERVAL
