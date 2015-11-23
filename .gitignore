@@ -1,0 +1,5 @@
+*.py[cod]
+core
+.*.sw*
+*.sublime-workspace
+pip-log.txt
