@@ -10,6 +10,10 @@ W1DEVICES = {
         '28-0115622c96ff': 'upper',
         '28-021581d6d3ff': 'lower',
     },
+    'air': {
+        '28-031563a39bff': 'roof',
+        '28-0000049587e9': 'attic',
+    },
 }
 INTERVAL=5
 
