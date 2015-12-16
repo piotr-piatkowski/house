@@ -23,7 +23,7 @@ def read_temp(dev):
         crc = f.readline()
         temp = f.readline()
     if re.search(r'crc=.. YES', crc):
-        m = re.search(r't=(\d+)', temp)
+        m = re.search(r't=(-?\d+)', temp)
         if m:
             return float(m.group(1)) / 1000
     return None
