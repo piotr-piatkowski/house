@@ -1,0 +1,90 @@
+#!/usr/bin/python
+
+import time
+import re
+from slackclient import SlackClient
+from influxdb import InfluxDBClient
+
+SLACK_TOKEN="put-your-token-here"
+conn = InfluxDBClient('172.22.22.1', 8086, 'idbup', 'idbup', 'house')
+
+WARNING_MAX_TEMP=60
+ALERT_MAX_TEMP=65
+WARNING_MIN_TEMP=45
+ALERT_MIN_TEMP=40
+
+WARNING_DELAY=60
+ALERT_DELAY=10
+
+def process_message(sc, msg):
+    if msg['channel'] == 'D03KSK1RM' and msg.get('user','') == 'U02REDENK':
+        process_command(sc, msg)
+    elif 'user' in msg:
+        tasks = re.findall('#(\d+)', msg['text'])
+        tasks = list(sorted(set(tasks)))
+        if tasks:
+            text_to_send = "Assembla tasks:\n"
+            for t in tasks:
+                text_to_send += get_task_line(int(t)) + "\n"
+            sc.server.api_call('chat.postMessage', 
+                channel=msg['channel'],
+                username="Bad Ass",
+                text=text_to_send,
+                #parse="none",
+            )
+    print "M={}".format(msg)
+
+def send_channel_message(channel, msg):
+    sc.server.api_call('chat.postMessage', 
+        channel=channel,
+        username="DomoBot",
+        text=msg,
+        #parse="none",
+    )
+
+last_warning_time=0
+def send_warning(msg):
+    global last_warning_time
+    if time.time() - last_warning_time > WARNING_DELAY:
+        send_channel_message('C0K8549V1', msg)
+        last_warning_time = time.time()
+
+last_alert_time=0
+def send_alert(msg):
+    global last_alert_time
+    if time.time() - last_alert_time > ALERT_DELAY:
+        send_channel_message('C0K88P5EC', msg)
+        last_alert_time = time.time()
+
+sc = SlackClient(SLACK_TOKEN)
+if sc.rtm_connect():
+    while True:
+        res = conn.query(
+            'select mean(lower) as lower, mean(upper) as upper from temperature ' +
+            'where time > now() - 1m', epoch='ns')
+        points = list(res.get_points('temperature'))
+        temps = points[0]
+        print "TEMPS: {}".format(temps)
+        temp_max = max(temps['lower'], temps['upper'])
+        temp_min = min(temps['lower'], temps['upper'])
+        if temp_max > ALERT_MAX_TEMP:
+            send_alert("Wysoka temperatura na piecu: {:.1f}".format(temp_max))
+        elif temp_max > WARNING_MAX_TEMP:
+            send_warning("Wysoka temperatura na piecu: {:.1f}".format(temp_max))
+        if temp_min < ALERT_MIN_TEMP:
+            send_alert("Niska temperatura na piecu: {:.1f}".format(temp_min))
+        elif temp_min < WARNING_MIN_TEMP:
+            send_warning("Niska temperatura na piecu: {:.1f}".format(temp_min))
+
+        msgs = sc.rtm_read()
+        if msgs:
+            for m in msgs:
+                if m['type'] == 'message':
+                    process_message(sc, m)
+                else:
+                    print "NON-MSG: {}".format(m)
+        else:
+            time.sleep(2)
+else:
+    print "Connection Failed, invalid token?"
+
