@@ -2,13 +2,16 @@
 
 import re
 import time
+import collections
 from influxdb import InfluxDBClient
+import RPi.GPIO as gpio
 
 W1DIR = '/sys/bus/w1/devices'
 W1DEVICES = {
     'stove': {
         '28-0115622c96ff': 'upper',
         '28-021581d6d3ff': 'lower',
+        '!17': 'fan',
     },
     'air': {
         '28-031563a39bff': 'roof',
@@ -17,26 +20,40 @@ W1DEVICES = {
 }
 INTERVAL=5
 
+gpio.setmode(gpio.BCM)
+gpio.setup(17, gpio.IN, pull_up_down=gpio.PUD_UP)
+
+
 def read_temp(dev):
+    m = re.match(r'!(\d+)', dev)
+    if m:
+        return 0 if gpio.input(int(m.group(1))) else 1
     path = "{}/{}/w1_slave".format(W1DIR, dev)
-    with open(path) as f:
-        crc = f.readline()
-        temp = f.readline()
-    if re.search(r'crc=.. YES', crc):
-        m = re.search(r't=(-?\d+)', temp)
-        if m:
-            return float(m.group(1)) / 1000
+    try:
+        with open(path) as f:
+            crc = f.readline()
+            temp = f.readline()
+        if re.search(r'crc=.. YES', crc):
+            m = re.search(r't=(-?\d+)', temp)
+            if m:
+                return float(m.group(1)) / 1000
+    except Exception as e:
+        print "Error reading {}: {}".format(dev, e)
     return None
 
 
-conn = InfluxDBClient('172.22.22.1', 8086, 'idbup', 'idbup', 'house')
+conn = InfluxDBClient('172.22.22.2', 8086, '', '', 'house')
 
 next_time = time.time()
 next_time = int(next_time / INTERVAL) * INTERVAL
 
+last_fan_off_ts = time.time()
+last_fan_states = collections.deque(3*[0], 3)
+
 while True:
     while time.time() < next_time:
         time.sleep(0.1)
+    now = time.time()
     points = []
     for place, termometers in W1DEVICES.iteritems():
         fields = {}
@@ -44,6 +61,12 @@ while True:
             t = read_temp(dev)
             if t is not None:
                 fields[name] = t
+                if name == 'fan':
+                    last_fan_states.append(t)
+                    if all(s == 0 for s in last_fan_states):
+                        last_fan_off_ts = now
+                    fields['fan_on_time'] = now - last_fan_off_ts
+
         if fields:
             points.append({
                 'measurement': 'temperature',
